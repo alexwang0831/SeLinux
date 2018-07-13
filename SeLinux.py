@@ -4,6 +4,7 @@ Read/Write memory and I/O under Linux
 """
 
 from tkinter import *
+from tkinter import filedialog
 import subprocess
 import os
 import SeLinuxPci
@@ -36,7 +37,9 @@ class seLinuxApplication:
         #self.root.geometry('550x340')
         self.root.resizable(width = False, height = False)
 
+        # Default Function
         self.registerList = self.pciDevice.readPciDevRegister()
+
         self.rowNumberFrame = Frame(self.root)
         self.rowNumberLabel = Label(self.rowNumberFrame, text = "00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F", padx=20, font=("Courier", 9))
         self.rowNumberLabel.pack(side="left")
@@ -127,23 +130,112 @@ class seLinuxApplication:
               .grid(row=1, column=0)
 
     def openFunction(self):
-        self.open_toplevel = Toplevel(self.root, bg='White')
-        textAbout = Text(self.open_toplevel, height=10)
-        textAbout.insert('1.0', "Function Not Ready")
-        textAbout.config(state='disabled')
-        textAbout.grid(row=0, column = 0)
-        Button(self.open_toplevel, text="Done", underline=0, command=lambda: self.open_toplevel.destroy()) \
-              .grid(row=1, column=0)
+        options = {}
+        options['initialdir'] = os.getcwd()
+        options['title'] = "Open File"
+        filename = filedialog.askopenfilename(**options)
 
+        if not filename: # askopenfilename return an empty string if dialog closed with "cancel".
+            return
 
-    def saveFunction(self):
-        self.save_toplevel = Toplevel(self.root, bg='White')
-        textAbout = Text(self.save_toplevel, height=10)
-        textAbout.insert('1.0', "Function Not Ready")
-        textAbout.config(state='disabled')
-        textAbout.grid(row=0, column = 0)
-        Button(self.save_toplevel, text="Done", underline=0, command=lambda: self.save_toplevel.destroy()) \
-              .grid(row=1, column=0)
+        f = open(filename, "r")
+        text2read = f.read()
+        f.close() # `()` was missing.
+
+       
+        # Find first "\n" in text2save
+        firstN = 0
+        while True:
+            if text2read[firstN] == "\n":
+                break
+            firstN += 1
+
+        # Find second "\n" in text2save
+        secondN = firstN +1
+        while True:
+            if text2read[secondN] == "\n":
+                break
+            secondN += 1
+
+        # Compare function type
+        functionType = text2read[:firstN]
+        addressInFile = text2read[firstN+1:secondN]
+
+        # Chectk file content
+        # Error check do not finish, don't modify the format and content  in register file
+        if functionType not in ['Memory', 'General I/O', 'Index I/O', 'PCI Device']:
+            print("file corruption")
+            return
+        
+        # Compare function and address
+        if functionType in ['Memory', 'General I/O', 'Index I/O']:
+            if functionType != self.seletcFunction.get():
+                print("function is not match!")
+                return
+            if addressInFile != self.userAddress:
+                print("Address is not match!")
+                return
+        else:
+            if addressInFile != self.seletcFunction.get()[:7]:
+                print("PCI Device is not match")
+                return
+
+        registerStr = text2read[secondN+1: -1]
+        registerStr = registerStr.replace("\n", "")
+        self.registerText.delete("1.0", "end")
+        self.registerText.insert("1.0", registerStr.upper())
+        
+        # Stop update Text widget, because it will be destoried by auto-update event
+        self.root.after_cancel(self.keyEvent)
+
+    def saveFunction(self):       
+        
+        if self.seletcFunction.get() == "":
+            # Default Function
+            text2save = "PCI Device" + "\n" + "00:00.0" + "\n"
+        elif self.seletcFunction.get() not in ['Memory', 'General I/O', 'Index I/O']:
+            # Select Pci Device
+            text2save = "PCI Device" + "\n" + self.seletcFunction.get()[:7] + "\n"
+        else:
+            # Other function
+            text2save = self.seletcFunction.get() + "\n" + self.userAddress + "\n"
+
+        # Transfer register content to 16 * 16 array
+        RegisteContent = ' '.join(self.registerList)
+        
+        for i in range(16):
+            for x in range(16):
+                text2save += self.registerList[i * 16 + x] + " "
+            text2save += "\n"
+
+        # Find first "\n" in text2save
+        firstN = 0
+        while True:
+            if text2save[firstN] == "\n":
+                break
+            firstN += 1
+
+        # Find second "\n" in text2save
+        secondN = firstN +1
+        while True:
+            if text2save[secondN] == "\n":
+                break
+            secondN += 1
+
+        options = {}
+        options['defaultextension'] = ".txt"
+        options['filetypes'] = [("all files", ".*"), ("text files", ".txt")]
+        options['initialdir'] = os.getcwd()
+        options['initialfile'] = text2save[:3] + text2save[firstN+1:secondN]
+        options['title'] = "Save As"
+
+        f2 = filedialog.asksaveasfilename(**options)
+        if not f2: # asksaveasfilename return an empty string if dialog closed with "cancel".
+            return
+
+        f = open(f2, "w")
+        f.write(text2save)
+        f.close() # `()` was missing.        
 
     def exitFunction(self):
         self.root.destroy()
